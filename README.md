@@ -1,0 +1,1 @@
+In this project, the effects on the base metals industry were examined in comparison to all industries. Time series data from the Statistics Center from 1381 to 1399 were used, and the effect of the policy of globalization of product prices on exports was specifically examined. This issue was addressed using the difference-in-differences method.
