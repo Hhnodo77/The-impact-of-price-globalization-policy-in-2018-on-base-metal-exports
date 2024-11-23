@@ -1,0 +1,354 @@
+---
+title: "DevEcon_Project1"
+author: "Hoda Noorbakhsh"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+According to the Statistical Center of Iran, the basic metals industry includes the production of basic iron and steel, essential copper and aluminum products, precious metals, and other primary products excluding iron, steel, copper, and aluminum, as well as iron and steel casting and non-ferrous metal casting. Given Iran's substantial production volume in these categories and the industry's significant share in the country’s total production, the basic metals industry was chosen for this project. Additionally, its high sensitivity to global trends and changes in the dollar exchange rate prompted an examination of its transformations over the past decade.
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(dplyr)
+library(readxl)
+library(tidyr)
+library(ggplot2)
+library(patchwork)
+library(stargazer)
+
+```
+
+```{r Read and Clean data, echo=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE}
+#Read and clean data
+
+file_path <- "F:/uni/master/3/Develop Economy/Project1/SeriZamani_Sanat_81-99.xlsx"
+
+column_names <- c(
+  "Year", 
+  "ActivityCodeLevel", 
+  "ActivityCode", 
+  "Activity", 
+  "NumWorkshops", 
+  "وضع مالکیت خصوصی تعاونی", 
+  "وضع مالکیت خصوصی سایر", 
+  "وضع مالکیت عمومی", 
+  "نحوه مدیریت خصوصی", 
+  "نحوه مدیریت عمومی", 
+  "TotNumEmployees", 
+  "MaleEmplo", 
+  "FemalEmplo", 
+  "Male_Wage_Emplo", 
+  "Female_Wage_Emplo", 
+  "Male_Not_Wage_Emplo", 
+  "Female_Not_Wage_Emplo", 
+  "Val_Compens_Services", 
+  "Total_Raw_Material_Val", 
+  "Foreign_Raw_Material_Val", 
+  "Production_Val", 
+  "Sales_Val", 
+  "Direct_Export_Val_Rial", 
+  "Direct_Export_Val_Dollars", 
+  "ارزش نهاده فعالیت صنعتی", 
+  "ارزش ستانده فعالیت صنعتی", 
+  "Added_Val_indus_Act", 
+  "ارزش خدمات غیرصنعتی دریافتی", 
+  "ارزش خدمات غیرصنعتی پرداختی", 
+  "Val_Indirect_Tax_Dut", 
+  "ارزش تشکیل سرمایه تغییرات انبار", 
+  "Fix_Cap_Val"
+)
+data <- read_excel(file_path, sheet = 2, skip = 4, col_names = FALSE)
+colnames(data) <- column_names
+```
+
+
+The charts illustrating the total number of employees and their gender distribution show that the majority of workers in the basic metals industry are men. The decrease in the number of workshops and the increase in the total number of employees in this sector seem consistent with the overall population growth trend during these years. However, the trend in the number of workshops reveals that in 1398, their count returned to the level observed in 1388 after a decade.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+filtered_data <- data[data$ActivityCode == 24 & data$Year >= 1390 & data$Year <= 1399, ]
+total_data <- data[data$ActivityCodeLevel == 1 & data$Year >= 1390 & data$Year <= 1399, ]
+
+filtered_data_2 <- data[data$ActivityCode == 24 & data$Year >= 1393 & data$Year <= 1399, ]
+total_data_2 <- data[data$ActivityCodeLevel == 1 & data$Year >= 1393 & data$Year <= 1399, ]
+
+long_data <- filtered_data %>%
+  pivot_longer(
+    cols = c(TotNumEmployees, MaleEmplo, FemalEmplo),
+    names_to = "Type",
+    values_to = "Employees"
+  )
+
+ggplot(long_data, aes(x = Year, y = Employees, color = Type)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  scale_color_manual(
+    values = c("TotNumEmployees" = "blue", "MaleEmplo" = "red", "FemalEmplo" = "green"),
+    labels = c("Female Employees", "Male Employees", "Total Employees")
+  ) +
+  labs(
+    title = "Number of Employees in Metal Workshops (Code 24)",
+    x = "Year",
+    y = "Number of Employees",
+    color = "Employee Type"
+  ) +
+  theme_minimal()
+
+ggsave("Employees_Metals.pdf")
+```
+Significant changes in the charts, particularly from 1394 onwards, are noticeable and will be examined in this project. It should be noted that these charts do not account for Iran's inflation, which will be addressed later. Nevertheless, it is evident that significant shifts in the basic metals industry distinguish it from the overall trends in other industries.
+
+```{r}
+#Adding Iranian inflation data from the Central Bank of the IRI
+
+inflation_data <- data.frame(
+  Year = c(1390:1399),
+  InflationRate = c(21.5, 30.5, 34.7, 15.6, 11.9, 9.0, 9.6, 31.2, 41.2, 47.1) 
+)
+merged_data <- merge(filtered_data, inflation_data, by = "Year", all.x = TRUE)
+total_merged_data <- merge(total_data, inflation_data, by = "Year", all.x = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+
+#Adjusting price columns to 1390 rates
+
+columns_to_adjust <- c("Production_Val", "Sales_Val", "Added_Val_indus_Act", 
+                       "Val_Indirect_Tax_Dut", "Fix_Cap_Val")
+
+merged_data <- merged_data %>%
+  mutate(Adjusted_Factor = 1)
+
+for (i in 1:nrow(merged_data)) {
+  if (merged_data$Year[i] > 1390) {
+    inflation_factors <- 1 + merged_data$InflationRate[merged_data$Year >= 1390 & merged_data$Year < merged_data$Year[i]] / 100
+    merged_data$Adjusted_Factor[i] <- prod(inflation_factors)
+  }
+}
+
+merged_data <- merged_data %>%
+  mutate(across(all_of(columns_to_adjust), 
+                ~ . / Adjusted_Factor, 
+                .names = "{.col}_adjusted"))
+
+
+total_merged_data <- total_merged_data %>%
+  mutate(Adjusted_Factor = 1)
+
+for (i in 1:nrow(total_merged_data)) {
+  if (total_merged_data$Year[i] > 1390) {
+    inflation_factors <- 1 + total_merged_data$InflationRate[total_merged_data$Year >= 1390 & total_merged_data$Year < total_merged_data$Year[i]] / 100
+    total_merged_data$Adjusted_Factor[i] <- prod(inflation_factors)
+  }
+}
+
+total_merged_data <- total_merged_data %>%
+  mutate(across(all_of(columns_to_adjust), 
+                ~ . / Adjusted_Factor, 
+                .names = "{.col}_adjusted"))
+```
+Several charts illustrate the alignment of this industry with the overall trends in Iran's industrial sector. However, the same cannot be said for dollar-denominated exports. While both total exports and base metal industry exports followed a similar trend up to 2017, a divergence occurred after that. Following the U.S. withdrawal from the JCPOA (Joint Comprehensive Plan of Action) and the Iranian government’s implementation of a fixed exchange rate of 42,000 IRR/USD, total exports declined over the next two years, whereas exports in the base metals industry experienced an increase.
+
+Despite the decline in the number of workshops, the value of sales, the value of products, and the value-added from industrial activities have experienced significant growth. Moreover, the export value in US dollars has shown considerable growth since 1394.
+```{r message=FALSE}
+ggplot(filtered_data, aes(x = Year, y = Production_Val)) +
+  geom_line(color = "blue", size = 1) + 
+  geom_point(color = "red", size = 2) +
+  labs(
+    title = "Production Values over time in base metals",
+    x = "Year",
+    y = "Production Value"
+  ) +
+  theme_minimal()
+
+ggsave("Production_Val_Metals.pdf")
+
+
+ggplot(total_data, aes(x = Year, y = Production_Val)) +
+  geom_line(color = "blue", size = 1) + 
+  geom_point(color = "red", size = 2) +
+  labs(
+    title = "Production Values over time in total",
+    x = "Year",
+    y = "Production Value"
+  ) +
+  theme_minimal()
+
+ggsave("Production_Val_total.pdf")
+
+ggplot(filtered_data_2, aes(x = Year, y = Direct_Export_Val_Dollars)) +
+  geom_line(color = "blue", size = 1) + 
+  geom_point(color = "red", size = 2) +
+  labs(
+    title = "Direct_Export_Val_Dollars Values over time in base metals",
+    x = "Year",
+    y = "Direct_Export_Val_Dollars Value"
+  ) +
+  theme_minimal()
+
+ggsave("Direct_Export_Val_Dollars_Metals.pdf")
+
+
+ggplot(total_data_2, aes(x = Year, y = Direct_Export_Val_Dollars)) +
+  geom_line(color = "blue", size = 1) + 
+  geom_point(color = "red", size = 2) +
+  labs(
+    title = "Direct_Export_Val_Dollars Values over time in total",
+    x = "Year",
+    y = "Production Value"
+  ) +
+  theme_minimal()
+
+ggsave("Direct_Export_Val_Dollars_total.pdf")
+
+```
+According to analyses of the turbulence in the metals market in 2018, it seems that the government initially obligated producers to sell their products domestically at the fixed exchange rate of 4200 Toman for each dollar (in August). However, following negotiations, the government agreed to allow prices to align with global market rates. This shift significantly boosted exports in the base metals sector. Despite the challenges posed by the U.S. withdrawal from the JCPOA, including stricter export conditions, this industry saw a steady growth in its exports.
+
+In the earlier section, charts for dollar-denominated exports in the base metals sector and overall exports were presented. This time, the two charts are plotted side by side to highlight the parallel trends observed between 2014 and 2018. Considering the significant size of the base metals industry within Iran's industrial landscape, approximately 15% of total dollar exports have been compared with the export trends of the base metals sector.
+
+```{r}
+ggplot() +
+  geom_line(data = filtered_data_2, aes(x = Year, y = Direct_Export_Val_Dollars), 
+            color = "blue", size = 1) +
+  geom_point(data = filtered_data_2, aes(x = Year, y = Direct_Export_Val_Dollars), 
+             color = "red", size = 2) +
+  
+  geom_line(data = total_data_2, aes(x = Year, y = (Direct_Export_Val_Dollars/7)), 
+            color = "green", size = 1) +
+  geom_point(data = total_data_2, aes(x = Year, y = (Direct_Export_Val_Dollars/7)), 
+             color = "orange", size = 2) +
+  
+  labs(
+    title = "Direct_Export_Val_Dollars Values Over Time",
+    x = "Year",
+    y = "Direct_Export_Val_Dollars Value"
+  ) +
+  theme_minimal()
+
+ggsave("Direct_Export_Val_Dollars_combined.pdf")
+
+```
+
+To enhance the accuracy of the study, monetary columns (e.g., sales value and production value) were converted to 1390 prices. This adjustment was accomplished by incorporating Central Bank of Iran data, broken down by year.
+By plotting inflation-adjusted charts relative to 1390 prices, the trends are clarified, enabling a more precise analysis.
+
+
+```{r}
+filtered_merged_data <- merged_data[merged_data$ActivityCode == 24 & merged_data$Year >= 1390 & merged_data$Year <= 1399, ]
+filtered_total_merged_data <- total_merged_data[total_merged_data$ActivityCodeLevel == 1 & total_merged_data$Year >= 1390 & total_merged_data$Year <= 1399, ]
+
+p1 <- ggplot(filtered_merged_data, aes(x = Year, y = Added_Val_indus_Act_adjusted)) +
+  geom_line(color = "blue", size = 1) + 
+  geom_point(color = "red", size = 2) +
+  labs(
+    title = "Adjusted Added Values (Base on 1390)",
+    x = "Year",
+    y = "Adjusted Added Value"
+  ) +
+  theme_minimal()
+
+p2 <- ggplot(filtered_total_merged_data, aes(x = Year, y = Added_Val_indus_Act_adjusted)) +
+  geom_line(color = "blue", size = 1) + 
+  geom_point(color = "red", size = 2) +
+  labs(
+    title = "Adjusted Added Values in Total (Base on 1390)",
+    x = "Year",
+    y = "Adjusted Added Value in Total"
+  ) +
+  theme_minimal()
+
+combined_plot <- p1 + p2
+
+print(combined_plot)
+
+ggsave("Combined_Adjusted_Added_Values.pdf", combined_plot, width = 12, height = 6)
+
+
+p3 <- ggplot(filtered_merged_data, aes(x = Year, y = Production_Val_adjusted)) +
+  geom_line(color = "blue", size = 1) + 
+  geom_point(color = "red", size = 2) +
+  labs(
+    title = "Adjusted Production Values (Base on 1390)",
+    x = "Year",
+    y = "Adjusted Production Value"
+  ) +
+  theme_minimal()
+
+p4 <- ggplot(filtered_total_merged_data, aes(x = Year, y = Production_Val_adjusted)) +
+  geom_line(color = "blue", size = 1) + 
+  geom_point(color = "red", size = 2) +
+  labs(
+    title = "Adjusted Production Values in Total (Base on 1390)",
+    x = "Year",
+    y = "Adjusted Production Value in Total"
+  ) +
+  theme_minimal()
+
+combined_plot <- p3 + p4
+
+print(combined_plot)
+
+ggsave("Combined_Adjusted_Production_Values.pdf", combined_plot, width = 12, height = 6)
+
+```
+
+As can be observed, these two trends were parallel until 1397 Using a difference-in-differences approach, the impact of the policy of price globalization is analyzed. For this purpose, I use the following regression model, where $\delta_t$ represents the fixed effects for the year. $\text{Mental}$ is dummy variable showing that if is base mental sector or not(1 if yes).
+
+$$\text{Export} = \delta_t + \beta_1 \text{Mental} + \beta_2 \text{PostPolicy} + \beta_3 (\text{Mental} \times \text{PostPolicy}) + \beta_4 \text{Production} + \epsilon$$
+
+```{r message=FALSE, warning=FALSE, results='asis'}
+data2 <- data
+filtered_data2 <- data2[data2$Year >= 1390 & data2$Year <= 1399, ]
+
+Adj_data <- merge(filtered_data2, inflation_data, by = "Year", all.x = TRUE)
+
+
+columns_to_adjust <- c("Production_Val", "Sales_Val", "Added_Val_indus_Act", 
+                       "Val_Indirect_Tax_Dut", "Fix_Cap_Val")
+
+Adj_data <- Adj_data %>%
+  mutate(Adjusted_Factor = 1)
+
+for (i in 1:nrow(Adj_data)) {
+  if (Adj_data$Year[i] > 1390) {
+    inflation_factors <- 1 + Adj_data$InflationRate[Adj_data$Year >= 1390 & Adj_data$Year < Adj_data$Year[i]] / 100
+    Adj_data$Adjusted_Factor[i] <- prod(inflation_factors)
+  }
+}
+
+Adj_data <- Adj_data %>%
+  mutate(across(all_of(columns_to_adjust), 
+                ~ . / Adjusted_Factor, 
+                .names = "{.col}_adjusted"))
+
+Adj_data$Treatment <- ifelse(Adj_data$ActivityCode == "24", 1, 0) 
+Adj_data$PostPolicy <- ifelse(Adj_data$Year >= 1397, 1, 0)
+
+Adj_data$Interaction <- Adj_data$Treatment * Adj_data$PostPolicy
+
+
+ols_model2 <- lm(Direct_Export_Val_Dollars ~ Treatment + PostPolicy + Interaction + Production_Val_adjusted, data = Adj_data)
+
+stargazer(ols_model2,
+          type = "html", out = "Results_with_Production.html",
+          title = "Difference-in-Differences: Export Value Analysis",
+          align = TRUE,
+          digits = 2,
+          column.labels = c("OLS (2)"),
+          dep.var.labels = "Export Value",
+          covariate.labels = c("Treatment", "PostPolicy", "Interaction", "Production"),
+          keep.stat = c("n", "rsq", "f"))
+
+```
+
+
+If the product coefficient is positive and significant, the policy implemented in 1397 has had an impact and has separated it from all industries. According to the table, this effect is not significant and it seems that the impact of this price globalization has been small due to export problems.
+
+
+
+
